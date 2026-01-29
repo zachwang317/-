@@ -62,9 +62,10 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
             # 构建批量查询
             query = query_instruction + "\n".join([f"{word}" for word in batch_words])
             
-            # 检索知识库
+            # 检索知识库，明确指定使用"多语言翻译工具知识库"
             response = kb_client.search(
                 query=query,
+                table_names=["多语言翻译工具知识库"],  # 明确指定知识库名称
                 top_k=10,  # 增加返回数量以匹配多个词汇
                 min_score=0.5  # 降低阈值，确保能检索到更多相关结果
             )
