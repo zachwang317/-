@@ -87,11 +87,39 @@ def normalize_language_names(languages_str: str) -> List[str]:
     return normalized_languages
 
 
+# 知识库列名映射：标准语言名称 → 知识库列名
+KNOWLEDGE_BASE_COLUMN_MAPPING: Dict[str, str] = {
+    "英文": "英语",
+    "日文": "日语",
+    "韩文": "韩语",
+    "法文": "法语",
+    "德文": "德语",
+    "西班牙文": "西班牙语",
+    "俄文": "俄语",
+    "意大利文": "意大利语",
+    "葡萄牙文": "葡萄牙语",
+    "阿拉伯文": "阿拉伯语",
+}
+
+
+def get_knowledge_base_column(language: str) -> Optional[str]:
+    """
+    获取知识库中对应的列名
+    
+    Args:
+        language: 标准化的语言名称，如"英文"
+    
+    Returns:
+        知识库列名，如"英语"
+    """
+    return KNOWLEDGE_BASE_COLUMN_MAPPING.get(language)
+
+
 class GlobalState(BaseModel):
     """全局状态定义"""
     csv_file: File = Field(..., description="输入的CSV文件")
     target_languages: str = Field(..., description="目标语言，用顿号分隔，如'英文、韩语'")
-    knowledge_base_url: Optional[str] = Field(default="多语言翻译工具知识库-中英", description="专词知识库名称（仅中译英时使用）")
+    knowledge_base_url: Optional[str] = Field(default="多语言翻译工具知识库", description="通用多语言知识库名称")
     csv_data: dict = Field(default={}, description="CSV原始数据（DataFrame转字典格式）")
     chinese_columns: List[str] = Field(default=[], description="CSV中识别出的中文列名列表")
     terminology_dict: dict = Field(default={}, description="从知识库检索到的专词字典")

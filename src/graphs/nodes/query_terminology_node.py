@@ -1,31 +1,24 @@
-from typing import Optional
+from typing import Optional, Dict, List
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
 from coze_coding_dev_sdk import KnowledgeClient
-from graphs.state import QueryTerminologyNodeInput, QueryTerminologyNodeOutput
+from graphs.state import QueryTerminologyNodeInput, QueryTerminologyNodeOutput, get_knowledge_base_column
 
 
 def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableConfig, runtime: Runtime[Context]) -> QueryTerminologyNodeOutput:
     """
-    title: 术语查询（优化版）
-    desc: 从知识库中批量检索专词，提升翻译准确率（仅在中译英时使用）
+    title: 术语查询（通用多语言版）
+    desc: 从通用多语言知识库中批量检索专词，提升翻译准确率
     integrations: 知识库
     """
     ctx = runtime.context
     
-    # 判断是否需要使用知识库（仅在中译英时使用）
-    need_use_kb = "英文" in state.target_languages
-    
-    if not need_use_kb:
-        # 如果不包含英文，直接返回空字典
-        return QueryTerminologyNodeOutput(terminology_dict={})
-    
     # 初始化知识库客户端
     kb_client = KnowledgeClient(ctx=ctx)
     
-    # 构建术语字典
-    terminology_dict = {}
+    # 构建术语字典：{中文词: {目标语言: 翻译}}
+    terminology_dict: Dict[str, Dict[str, str]] = {}
     
     try:
         # 从CSV数据中提取需要翻译的中文词汇
@@ -44,16 +37,30 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
         if not all_chinese_words:
             return QueryTerminologyNodeOutput(terminology_dict={})
         
-        # 优化：批量检索，而不是逐个检索
-        # 将词汇列表分成批次，每批最多10个词
+        # 构建需要查询的列名列表（根据目标语言）
+        target_columns = []
+        for target_lang in state.target_languages:
+            kb_column = get_knowledge_base_column(target_lang)
+            if kb_column:
+                target_columns.append((target_lang, kb_column))
+        
+        # 如果没有需要查询的列，直接返回
+        if not target_columns:
+            return QueryTerminologyNodeOutput(terminology_dict={})
+        
+        # 批量检索：将词汇列表分成批次，每批最多10个词
         batch_size = 10
         word_list = list(all_chinese_words)
+        
+        # 构建查询说明
+        column_names = [col_name for _, col_name in target_columns]
+        query_instruction = f"请从知识库的以下列中提取翻译：{', '.join(column_names)}\n\n"
         
         for i in range(0, len(word_list), batch_size):
             batch_words = word_list[i:i + batch_size]
             
-            # 构建批量查询：用换行分隔多个词汇
-            query = "\n".join([f"{word} 翻译" for word in batch_words])
+            # 构建批量查询
+            query = query_instruction + "\n".join([f"{word}" for word in batch_words])
             
             # 检索知识库
             response = kb_client.search(
@@ -66,25 +73,39 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
                 # 从检索结果中提取翻译
                 for chunk in response.chunks:
                     content = chunk.content
-                    # 解析知识库内容，提取翻译
-                    # 假设知识库中的格式为："中文词 英文:xxx 日文:xxx"
-                    import re
                     
-                    # 匹配中文词
-                    for word in batch_words:
-                        if word not in content:
-                            continue
+                    # 为每个目标语言解析翻译
+                    for target_lang, kb_column in target_columns:
+                        # 尝试从内容中提取该列的翻译
+                        # 假设知识库格式：中文内容,英语,日语,韩语
+                        import re
                         
-                        # 如果这个词还没有翻译，尝试提取
-                        if word not in terminology_dict:
-                            terminology_dict[word] = {}
-                        
-                        # 提取翻译信息，格式：英文:xxx 日文:xxx
-                        pattern = r'(\w+):\s*([^,\s\n]+)'
-                        matches = re.findall(pattern, content)
-                        
-                        for lang, trans in matches:
-                            terminology_dict[word][lang] = trans
+                        # 查找包含该词的行
+                        for word in batch_words:
+                            if word not in content:
+                                continue
+                            
+                            # 初始化该词的字典
+                            if word not in terminology_dict:
+                                terminology_dict[word] = {}
+                            
+                            # 尝试提取该列的翻译
+                            # 方式1：查找 "中文内容,英语,日语,韩语" 格式
+                            pattern = rf'{re.escape(word)},([^,\n]*)'
+                            matches = re.findall(pattern, content)
+                            
+                            if matches:
+                                # 找到匹配，需要根据列的位置提取对应的翻译
+                                # 这里简化处理，尝试在内容中找到列名和对应的值
+                                column_pattern = rf'{re.escape(kb_column)}[:：]?\s*([^\s,，\n]+)'
+                                column_matches = re.findall(column_pattern, content)
+                                
+                                if column_matches:
+                                    terminology_dict[word][target_lang] = column_matches[0]
+                                else:
+                                    # 如果没找到明确标注的，尝试从CSV格式中推断
+                                    # 这里的处理比较复杂，简化为直接在内容中查找词后面的内容
+                                    pass
         
         return QueryTerminologyNodeOutput(terminology_dict=terminology_dict)
     

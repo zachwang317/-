@@ -101,13 +101,11 @@ def parallel_translate_node(state: ParallelTranslateNodeInput, config: RunnableC
     translated_rows = []
     translated_items = result.get("translated_items", translate_items)
     
-    # 生成列名：列序号_列名_目标语言_翻译
-    # 列序号使用字母A, B, C, ...
+    # 生成列名：列名_目标语言_翻译
     translated_columns = []
     
-    for i, col in enumerate(state.chinese_columns):
-        col_letter = chr(65 + i)  # A, B, C, ...
-        new_col_name = f"{col_letter}_{col}_{state.target_language}_翻译"
+    for col in state.chinese_columns:
+        new_col_name = f"{col}_{state.target_language}_翻译"
         translated_columns.append({
             "original_column": col,
             "translated_column": new_col_name
