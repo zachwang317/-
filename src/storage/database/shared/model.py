@@ -1,6 +1,6 @@
 from coze_coding_dev_sdk.database import Base
 
-from sqlalchemy import PrimaryKeyConstraint, String
+from sqlalchemy import PrimaryKeyConstraint, String, Text
 from typing import Optional
 
 from sqlalchemy.orm import Mapped, mapped_column
@@ -15,3 +15,5 @@ class 翻译知识库(Base):
     英语: Mapped[Optional[str]] = mapped_column(String)
     日语: Mapped[Optional[str]] = mapped_column(String)
     韩语: Mapped[Optional[str]] = mapped_column(String)
+    # 添加向量列用于语义检索
+    中文向量: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
