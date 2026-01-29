@@ -26,7 +26,7 @@ def generate_csv_node(state: GenerateCSVNodeInput, config: RunnableConfig, runti
     )
     
     # 2. 将字典数据转换为DataFrame
-    data_rows = state.translated_data['data']
+    data_rows = state.merged_data['data']
     df = pd.DataFrame(data_rows)
     
     # 3. 生成CSV文件到临时目录
