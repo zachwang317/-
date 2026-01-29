@@ -3,19 +3,22 @@ import re
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
-from graphs.state import ReadCSVNodeInput, ReadCSVNodeOutput
+from graphs.state import ReadCSVNodeInput, ReadCSVNodeOutput, normalize_language_names
 from utils.file.file import FileOps
 
 
 def read_csv_node(state: ReadCSVNodeInput, config: RunnableConfig, runtime: Runtime[Context]) -> ReadCSVNodeOutput:
     """
     title: CSV读取与中文列识别
-    desc: 读取CSV文件，识别包含中文内容的列
+    desc: 读取CSV文件，识别包含中文内容的列，并标准化目标语言名称
     integrations: 文件处理
     """
     ctx = runtime.context
     
-    # 1. 读取CSV文件内容
+    # 1. 标准化目标语言名称
+    normalized_languages = normalize_language_names(state.target_languages)
+    
+    # 2. 读取CSV文件内容
     csv_content = FileOps.extract_text(state.csv_file)
     
     # 2. 使用pandas读取CSV（从字符串）
@@ -60,7 +63,8 @@ def read_csv_node(state: ReadCSVNodeInput, config: RunnableConfig, runtime: Runt
         
         return ReadCSVNodeOutput(
             csv_data=csv_data,
-            chinese_columns=chinese_columns
+            chinese_columns=chinese_columns,
+            target_languages=normalized_languages
         )
     finally:
         # 清理临时文件

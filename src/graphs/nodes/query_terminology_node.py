@@ -9,13 +9,16 @@ from graphs.state import QueryTerminologyNodeInput, QueryTerminologyNodeOutput
 def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableConfig, runtime: Runtime[Context]) -> QueryTerminologyNodeOutput:
     """
     title: 术语查询
-    desc: 从知识库中检索专词，提升翻译准确率
+    desc: 从知识库中检索专词，提升翻译准确率（仅在中译英时使用）
     integrations: 知识库
     """
     ctx = runtime.context
     
-    # 如果没有提供知识库URL，返回空字典
-    if not state.knowledge_base_url:
+    # 判断是否需要使用知识库（仅在中译英时使用）
+    need_use_kb = "英文" in state.target_languages
+    
+    if not need_use_kb:
+        # 如果不包含英文，直接返回空字典
         return QueryTerminologyNodeOutput(terminology_dict={})
     
     # 初始化知识库客户端

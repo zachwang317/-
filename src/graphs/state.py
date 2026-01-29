@@ -1,13 +1,97 @@
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel, Field
 from utils.file.file import File
+
+
+# 语言名称标准化映射表
+LANGUAGE_MAPPING: Dict[str, str] = {
+    # 英文
+    "英文": "英文",
+    "英语": "英文",
+    "english": "英文",
+    "English": "英文",
+    "en": "英文",
+    # 日文
+    "日文": "日文",
+    "日语": "日文",
+    "japanese": "日文",
+    "Japanese": "日文",
+    "ja": "日文",
+    # 韩文
+    "韩文": "韩文",
+    "韩语": "韩文",
+    "korean": "韩文",
+    "Korean": "韩文",
+    "ko": "韩文",
+    # 法文
+    "法文": "法文",
+    "法语": "法文",
+    "french": "法文",
+    "French": "法文",
+    "fr": "法文",
+    # 德文
+    "德文": "德文",
+    "德语": "德文",
+    "german": "德文",
+    "German": "德文",
+    "de": "德文",
+    # 西班牙文
+    "西班牙文": "西班牙文",
+    "西班牙语": "西班牙文",
+    "spanish": "西班牙文",
+    "Spanish": "西班牙文",
+    "es": "西班牙文",
+    # 俄文
+    "俄文": "俄文",
+    "俄语": "俄文",
+    "russian": "俄文",
+    "Russian": "俄文",
+    "ru": "俄文",
+    # 意大利文
+    "意大利文": "意大利文",
+    "意大利语": "意大利文",
+    "italian": "意大利文",
+    "Italian": "意大利文",
+    "it": "意大利文",
+}
+
+
+def normalize_language_names(languages_str: str) -> List[str]:
+    """
+    标准化语言名称
+    
+    Args:
+        languages_str: 用顿号分隔的语言字符串，如"英文、韩语、English"
+    
+    Returns:
+        标准化后的语言列表，如["英文", "韩文"]
+    """
+    # 按顿号、逗号、空格等分隔符分割
+    import re
+    raw_languages = re.split(r'[、,，\s]+', languages_str.strip())
+    
+    # 标准化每个语言名称
+    normalized_languages = []
+    seen = set()  # 避免重复
+    
+    for lang in raw_languages:
+        if not lang:
+            continue
+        # 从映射表中查找标准名称
+        standard_name = LANGUAGE_MAPPING.get(lang, lang)
+        # 避免重复
+        if standard_name not in seen:
+            normalized_languages.append(standard_name)
+            seen.add(standard_name)
+    
+    return normalized_languages
 
 
 class GlobalState(BaseModel):
     """全局状态定义"""
     csv_file: File = Field(..., description="输入的CSV文件")
-    target_languages: List[str] = Field(..., description="目标语言列表，如['英文', '日文']")
-    knowledge_base_url: Optional[str] = Field(default=None, description="专词知识库的URL（可选）")
+    target_languages: str = Field(..., description="目标语言，用顿号分隔，如'英文、韩语'")
+    knowledge_base_url: Optional[str] = Field(default="多语言翻译工具知识库-中英", description="专词知识库名称（仅中译英时使用）")
     csv_data: dict = Field(default={}, description="CSV原始数据（DataFrame转字典格式）")
     chinese_columns: List[str] = Field(default=[], description="CSV中识别出的中文列名列表")
     terminology_dict: dict = Field(default={}, description="从知识库检索到的专词字典")
@@ -18,8 +102,7 @@ class GlobalState(BaseModel):
 class GraphInput(BaseModel):
     """工作流输入"""
     csv_file: File = Field(..., description="包含中文列的CSV文件")
-    target_languages: List[str] = Field(..., description="目标语言列表，如['英文', '日文', '韩文']")
-    knowledge_base_url: Optional[str] = Field(default=None, description="专词知识库的URL（可选），用于提升翻译准确率")
+    target_languages: str = Field(..., description="目标语言，用顿号分隔，如'英文、韩语、日文'。支持多种写法：英文/英语/English均可")
 
 
 class GraphOutput(BaseModel):
@@ -30,12 +113,14 @@ class GraphOutput(BaseModel):
 class ReadCSVNodeInput(BaseModel):
     """CSV读取节点输入"""
     csv_file: File = Field(..., description="输入的CSV文件")
+    target_languages: str = Field(..., description="目标语言，用顿号分隔，如'英文、韩语'")
 
 
 class ReadCSVNodeOutput(BaseModel):
     """CSV读取节点输出"""
     csv_data: dict = Field(..., description="CSV原始数据（DataFrame转字典格式）")
     chinese_columns: List[str] = Field(..., description="识别出的中文列名列表")
+    target_languages: List[str] = Field(..., description="标准化后的目标语言列表")
 
 
 class GenerateCSVNodeInput(BaseModel):
@@ -52,7 +137,8 @@ class QueryTerminologyNodeInput(BaseModel):
     """术语查询节点输入"""
     csv_data: dict = Field(..., description="CSV原始数据（DataFrame转字典格式）")
     chinese_columns: List[str] = Field(..., description="需要翻译的中文列名列表")
-    knowledge_base_url: Optional[str] = Field(default=None, description="专词知识库的URL")
+    target_languages: List[str] = Field(..., description="目标语言列表")
+    knowledge_base_url: Optional[str] = Field(default="多语言翻译工具知识库-中英", description="专词知识库名称")
 
 
 class QueryTerminologyNodeOutput(BaseModel):
