@@ -1,8 +1,12 @@
 from typing import List
+import logging
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
 from graphs.state import MergeTranslationsNodeInput, MergeTranslationsNodeOutput
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 def merge_translations_node(state: MergeTranslationsNodeInput, config: RunnableConfig, runtime: Runtime[Context]) -> MergeTranslationsNodeOutput:
@@ -12,6 +16,16 @@ def merge_translations_node(state: MergeTranslationsNodeInput, config: RunnableC
     integrations: -
     """
     ctx = runtime.context
+    
+    # 调试日志：检查输入数据的类型和结构
+    logger.info(f"合并节点输入 - csv_data类型: {type(state.csv_data)}")
+    logger.info(f"合并节点输入 - csv_data columns: {state.csv_data.get('columns', 'N/A')}")
+    logger.info(f"合并节点输入 - csv_data data类型: {type(state.csv_data.get('data'))}")
+    if state.csv_data.get('data'):
+        logger.info(f"合并节点输入 - csv_data data第一行类型: {type(state.csv_data['data'][0])}")
+        logger.info(f"合并节点输入 - csv_data data第一行内容: {state.csv_data['data'][0]}")
+    
+    logger.info(f"合并节点输入 - translated_results数量: {len(state.translated_results)}")
     
     # 1. 以原始数据为基础
     merged_rows = state.csv_data['data'].copy()
