@@ -8,8 +8,8 @@ from graphs.state import QueryTerminologyNodeInput, QueryTerminologyNodeOutput
 
 def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableConfig, runtime: Runtime[Context]) -> QueryTerminologyNodeOutput:
     """
-    title: 术语查询
-    desc: 从知识库中检索专词，提升翻译准确率（仅在中译英时使用）
+    title: 术语查询（优化版）
+    desc: 从知识库中批量检索专词，提升翻译准确率（仅在中译英时使用）
     integrations: 知识库
     """
     ctx = runtime.context
@@ -35,42 +35,56 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
             for col in state.chinese_columns:
                 if col in row:
                     text = str(row[col])
-                    # 简单提取中文词（实际可以用更复杂的分词算法）
+                    # 提取中文词（2个字及以上）
                     import re
                     chinese_words = re.findall(r'[\u4e00-\u9fff]{2,}', text)
                     all_chinese_words.update(chinese_words)
         
-        # 对每个中文词进行知识库检索
-        for word in all_chinese_words:
-            query = f"{word} 翻译"
+        # 如果没有中文词汇，直接返回
+        if not all_chinese_words:
+            return QueryTerminologyNodeOutput(terminology_dict={})
+        
+        # 优化：批量检索，而不是逐个检索
+        # 将词汇列表分成批次，每批最多10个词
+        batch_size = 10
+        word_list = list(all_chinese_words)
+        
+        for i in range(0, len(word_list), batch_size):
+            batch_words = word_list[i:i + batch_size]
+            
+            # 构建批量查询：用换行分隔多个词汇
+            query = "\n".join([f"{word} 翻译" for word in batch_words])
             
             # 检索知识库
             response = kb_client.search(
                 query=query,
-                top_k=3,
-                min_score=0.6
+                top_k=10,  # 增加返回数量以匹配多个词汇
+                min_score=0.5  # 降低阈值，确保能检索到更多相关结果
             )
             
             if response.code == 0 and response.chunks:
                 # 从检索结果中提取翻译
-                # 假设知识库中的格式为："中文词 -> 目标语言: 翻译"
                 for chunk in response.chunks:
                     content = chunk.content
                     # 解析知识库内容，提取翻译
-                    # 这里简化处理，实际需要根据知识库的具体格式来解析
-                    if word in content:
-                        # 尝试提取翻译信息
-                        import re
-                        # 假设格式为：中文词 英文:xxx 日文:xxx
-                        pattern = r'(\w+):\s*([^,\s]+)'
+                    # 假设知识库中的格式为："中文词 英文:xxx 日文:xxx"
+                    import re
+                    
+                    # 匹配中文词
+                    for word in batch_words:
+                        if word not in content:
+                            continue
+                        
+                        # 如果这个词还没有翻译，尝试提取
+                        if word not in terminology_dict:
+                            terminology_dict[word] = {}
+                        
+                        # 提取翻译信息，格式：英文:xxx 日文:xxx
+                        pattern = r'(\w+):\s*([^,\s\n]+)'
                         matches = re.findall(pattern, content)
                         
-                        if matches:
-                            if word not in terminology_dict:
-                                terminology_dict[word] = {}
-                            
-                            for lang, trans in matches:
-                                terminology_dict[word][lang] = trans
+                        for lang, trans in matches:
+                            terminology_dict[word][lang] = trans
         
         return QueryTerminologyNodeOutput(terminology_dict=terminology_dict)
     
