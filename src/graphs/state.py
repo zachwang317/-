@@ -166,7 +166,7 @@ class QueryTerminologyNodeInput(BaseModel):
     csv_data: dict = Field(..., description="CSV原始数据（DataFrame转字典格式）")
     chinese_columns: List[str] = Field(..., description="需要翻译的中文列名列表")
     target_languages: List[str] = Field(..., description="目标语言列表")
-    knowledge_base_url: Optional[str] = Field(default="多语言翻译工具知识库-中英", description="专词知识库名称")
+    knowledge_base_url: Optional[str] = Field(default="多语言翻译工具知识库", description="专词知识库名称")
 
 
 class QueryTerminologyNodeOutput(BaseModel):
