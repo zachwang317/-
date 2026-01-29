@@ -1,10 +1,14 @@
 from typing import Optional, Dict, List
 import re
+import logging
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
 from coze_coding_dev_sdk import KnowledgeClient
 from graphs.state import QueryTerminologyNodeInput, QueryTerminologyNodeOutput, get_knowledge_base_column
+
+# 设置日志
+logger = logging.getLogger(__name__)
 
 
 def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableConfig, runtime: Runtime[Context]) -> QueryTerminologyNodeOutput:
@@ -35,6 +39,7 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
         
         # 如果没有中文词汇，直接返回
         if not all_chinese_words:
+            logger.info("没有找到中文词汇")
             return QueryTerminologyNodeOutput(terminology_dict={})
         
         # 构建需要查询的列名列表（根据目标语言）
@@ -46,7 +51,15 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
         
         # 如果没有需要查询的列，直接返回
         if not target_columns:
+            logger.info(f"目标语言 {state.target_languages} 没有对应的列名映射")
             return QueryTerminologyNodeOutput(terminology_dict={})
+        
+        # 获取知识库名称（使用传入的knowledge_base_url，而不是硬编码）
+        knowledge_base_name = state.knowledge_base_url or "多语言翻译工具知识库"
+        
+        logger.info(f"开始查询知识库: {knowledge_base_name}")
+        logger.info(f"待查询的中文词汇: {list(all_chinese_words)}")
+        logger.info(f"目标语言: {state.target_languages}")
         
         # 批量检索：将词汇列表分成批次，每批最多10个词
         batch_size = 10
@@ -60,18 +73,28 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
                 # 构建批量查询：直接查询中文词
                 query = "\n".join(batch_words)
                 
-                # 检索知识库
+                logger.info(f"查询批次: {batch_words}")
+                
+                # 检索知识库（使用正确的知识库名称）
                 response = kb_client.search(
                     query=query,
-                    table_names=["多语言翻译工具知识库"],  # 明确指定知识库名称
+                    table_names=[knowledge_base_name],  # 使用传入的知识库名称
                     top_k=10,
                     min_score=0.3  # 降低阈值，确保能检索到更多相关结果
                 )
                 
+                logger.info(f"知识库响应码: {response.code}")
+                if response.code != 0:
+                    logger.error(f"知识库错误: {response.msg}")
+                    continue
+                
+                logger.info(f"检索到 {len(response.chunks)} 条结果")
+                
                 if response.code == 0 and response.chunks:
                     # 从检索结果中提取翻译
-                    for chunk in response.chunks:
+                    for idx, chunk in enumerate(response.chunks):
                         content = chunk.content
+                        logger.info(f"结果 {idx + 1} (Score: {chunk.score}): {content[:200]}...")
                         
                         # 尝试多种方式提取翻译
                         for word in batch_words:
@@ -89,6 +112,7 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
                                 translation = table_match.group(1).strip()
                                 if translation and translation != word:
                                     terminology_dict[word][target_lang] = translation
+                                    logger.info(f"✓ 方式1找到: {word} -> {translation}")
                                     continue
                             
                             # 方式2：尝试CSV格式 "中文,英语,日语"
@@ -98,6 +122,7 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
                                 translation = csv_match.group(1).strip()
                                 if translation and translation != word:
                                     terminology_dict[word][target_lang] = translation
+                                    logger.info(f"✓ 方式2找到: {word} -> {translation}")
                                     continue
                             
                             # 方式3：尝试JSON格式
@@ -107,6 +132,7 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
                                 translation = json_match.group(1).strip()
                                 if translation and translation != word:
                                     terminology_dict[word][target_lang] = translation
+                                    logger.info(f"✓ 方式3找到: {word} -> {translation}")
                                     continue
                             
                             # 方式4：尝试从文本中提取 "中文 -> 翻译" 格式
@@ -116,18 +142,17 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
                                 translation = arrow_match.group(1).strip()
                                 if translation and translation != word:
                                     terminology_dict[word][target_lang] = translation
+                                    logger.info(f"✓ 方式4找到: {word} -> {translation}")
                                     continue
         
         # 打印调试信息
-        print(f"知识库查询完成，共找到 {len(terminology_dict)} 个术语的翻译")
+        logger.info(f"知识库查询完成，共找到 {len(terminology_dict)} 个术语的翻译")
         for word, translations in terminology_dict.items():
-            print(f"  {word}: {translations}")
+            logger.info(f"  {word}: {translations}")
         
         return QueryTerminologyNodeOutput(terminology_dict=terminology_dict)
     
     except Exception as e:
         # 如果知识库查询失败，返回空字典，不影响后续翻译流程
-        print(f"知识库查询失败: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"知识库查询失败: {str(e)}", exc_info=True)
         return QueryTerminologyNodeOutput(terminology_dict={})
