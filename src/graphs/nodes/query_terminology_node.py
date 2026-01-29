@@ -4,8 +4,9 @@ import logging
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
-from coze_coding_dev_sdk import KnowledgeClient
-from graphs.state import QueryTerminologyNodeInput, QueryTerminologyNodeOutput, get_knowledge_base_column
+from coze_coding_dev_sdk.database import get_session
+from storage.database.translation_manager import TranslationKnowledgeManager
+from graphs.state import QueryTerminologyNodeInput, QueryTerminologyNodeOutput
 
 # 设置日志
 logger = logging.getLogger(__name__)
@@ -13,14 +14,17 @@ logger = logging.getLogger(__name__)
 
 def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableConfig, runtime: Runtime[Context]) -> QueryTerminologyNodeOutput:
     """
-    title: 术语查询（通用多语言版）
-    desc: 从通用多语言知识库中批量检索专词，提升翻译准确率
-    integrations: 知识库
+    title: 术语查询（数据库版）
+    desc: 从数据库表"翻译知识库"中批量检索专词，支持多语言平铺列结构
+    integrations: 数据库
     """
     ctx = runtime.context
     
-    # 初始化知识库客户端
-    kb_client = KnowledgeClient(ctx=ctx)
+    # 初始化数据库会话
+    db = get_session()
+    
+    # 初始化翻译知识库管理器
+    translation_mgr = TranslationKnowledgeManager()
     
     # 构建术语字典：{中文词: {目标语言: 翻译}}
     terminology_dict: Dict[str, Dict[str, str]] = {}
@@ -42,117 +46,43 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
             logger.info("没有找到中文词汇")
             return QueryTerminologyNodeOutput(terminology_dict={})
         
-        # 构建需要查询的列名列表（根据目标语言）
-        target_columns = []
-        for target_lang in state.target_languages:
-            kb_column = get_knowledge_base_column(target_lang)
-            if kb_column:
-                target_columns.append((target_lang, kb_column))
-        
-        # 如果没有需要查询的列，直接返回
-        if not target_columns:
-            logger.info(f"目标语言 {state.target_languages} 没有对应的列名映射")
-            return QueryTerminologyNodeOutput(terminology_dict={})
-        
-        # 获取知识库名称（使用传入的knowledge_base_url，而不是硬编码）
-        knowledge_base_name = state.knowledge_base_url or "多语言翻译工具知识库"
-        
-        logger.info(f"开始查询知识库: {knowledge_base_name}")
-        logger.info(f"待查询的中文词汇: {list(all_chinese_words)}")
+        logger.info(f"开始从数据库查询术语翻译")
+        logger.info(f"待查询的中文词汇数量: {len(all_chinese_words)}")
         logger.info(f"目标语言: {state.target_languages}")
         
-        # 批量检索：将词汇列表分成批次，每批最多10个词
-        batch_size = 10
+        # 将词汇列表转换为有序列表
         word_list = list(all_chinese_words)
         
-        # 为每个目标语言分别查询
-        for target_lang, kb_column in target_columns:
-            for i in range(0, len(word_list), batch_size):
-                batch_words = word_list[i:i + batch_size]
-                
-                # 构建批量查询：直接查询中文词
-                query = "\n".join(batch_words)
-                
-                logger.info(f"查询批次: {batch_words}")
-                
-                # 检索知识库（使用正确的知识库名称）
-                response = kb_client.search(
-                    query=query,
-                    table_names=[knowledge_base_name],  # 使用传入的知识库名称
-                    top_k=10,
-                    min_score=0.3  # 降低阈值，确保能检索到更多相关结果
-                )
-                
-                logger.info(f"知识库响应码: {response.code}")
-                if response.code != 0:
-                    logger.error(f"知识库错误: {response.msg}")
-                    continue
-                
-                logger.info(f"检索到 {len(response.chunks)} 条结果")
-                
-                if response.code == 0 and response.chunks:
-                    # 从检索结果中提取翻译
-                    for idx, chunk in enumerate(response.chunks):
-                        content = chunk.content
-                        logger.info(f"结果 {idx + 1} (Score: {chunk.score}): {content[:200]}...")
-                        
-                        # 尝试多种方式提取翻译
-                        for word in batch_words:
-                            if word not in content:
-                                continue
-                            
-                            # 初始化该词的字典
-                            if word not in terminology_dict:
-                                terminology_dict[word] = {}
-                            
-                            # 方式1：尝试表格格式 "中文|英语|日语"
-                            table_pattern = rf'^{re.escape(word)}\|([^\|]+)'
-                            table_match = re.search(table_pattern, content, re.MULTILINE)
-                            if table_match:
-                                translation = table_match.group(1).strip()
-                                if translation and translation != word:
-                                    terminology_dict[word][target_lang] = translation
-                                    logger.info(f"✓ 方式1找到: {word} -> {translation}")
-                                    continue
-                            
-                            # 方式2：尝试CSV格式 "中文,英语,日语"
-                            csv_pattern = rf'^{re.escape(word)},([^,\n]+)'
-                            csv_match = re.search(csv_pattern, content, re.MULTILINE)
-                            if csv_match:
-                                translation = csv_match.group(1).strip()
-                                if translation and translation != word:
-                                    terminology_dict[word][target_lang] = translation
-                                    logger.info(f"✓ 方式2找到: {word} -> {translation}")
-                                    continue
-                            
-                            # 方式3：尝试JSON格式
-                            json_pattern = rf'"{re.escape(word)}"\s*:\s*{re.escape(kb_column)}\s*[:：]\s*"([^"]+)"'
-                            json_match = re.search(json_pattern, content)
-                            if json_match:
-                                translation = json_match.group(1).strip()
-                                if translation and translation != word:
-                                    terminology_dict[word][target_lang] = translation
-                                    logger.info(f"✓ 方式3找到: {word} -> {translation}")
-                                    continue
-                            
-                            # 方式4：尝试从文本中提取 "中文 -> 翻译" 格式
-                            arrow_pattern = rf'{re.escape(word)}\s*[→→-]\s*([^\n]+)'
-                            arrow_match = re.search(arrow_pattern, content)
-                            if arrow_match:
-                                translation = arrow_match.group(1).strip()
-                                if translation and translation != word:
-                                    terminology_dict[word][target_lang] = translation
-                                    logger.info(f"✓ 方式4找到: {word} -> {translation}")
-                                    continue
+        # 为每个目标语言批量查询翻译
+        for target_lang in state.target_languages:
+            # 批量查询该语言的所有翻译
+            translations = translation_mgr.get_translations_batch(
+                db=db,
+                chinese_terms=word_list,
+                target_language=target_lang
+            )
+            
+            # 构建术语字典
+            for chinese_word, translation in translations.items():
+                if translation:  # 只有当翻译存在时才添加
+                    if chinese_word not in terminology_dict:
+                        terminology_dict[chinese_word] = {}
+                    terminology_dict[chinese_word][target_lang] = translation
+                    logger.info(f"✓ 找到翻译: {chinese_word} -> {translation} ({target_lang})")
+                else:
+                    logger.debug(f"  未找到翻译: {chinese_word} ({target_lang})")
         
-        # 打印调试信息
-        logger.info(f"知识库查询完成，共找到 {len(terminology_dict)} 个术语的翻译")
+        # 打印汇总信息
+        logger.info(f"数据库查询完成，共找到 {len(terminology_dict)} 个术语的翻译")
         for word, translations in terminology_dict.items():
             logger.info(f"  {word}: {translations}")
         
         return QueryTerminologyNodeOutput(terminology_dict=terminology_dict)
     
     except Exception as e:
-        # 如果知识库查询失败，返回空字典，不影响后续翻译流程
-        logger.error(f"知识库查询失败: {str(e)}", exc_info=True)
+        # 如果数据库查询失败，返回空字典，不影响后续翻译流程
+        logger.error(f"数据库查询失败: {str(e)}", exc_info=True)
         return QueryTerminologyNodeOutput(terminology_dict={})
+    finally:
+        # 关闭数据库会话
+        db.close()
