@@ -139,7 +139,7 @@ class TranslationKnowledgeManager:
         target_language: str,
         embedding_client=None,
         top_k: int = 5,
-        min_similarity: float = 0.7
+        min_similarity: float = 0.3
     ) -> List[Tuple[str, str, float]]:
         """
         通过向量相似度检索翻译

@@ -54,10 +54,23 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
         logger.info(f"待查询的中文词汇数量: {len(all_chinese_words)}")
         logger.info(f"目标语言: {state.target_languages}")
         
-        # 为每个目标语言进行向量检索
+        exact_match_count = 0
+        vector_match_count = 0
+        
+        # 为每个目标语言进行检索
         for target_lang in state.target_languages:
             for chinese_word in all_chinese_words:
-                # 使用向量相似度检索
+                # 1. 优先尝试精确匹配
+                exact_translation = translation_mgr.get_translation(db, chinese_word, target_lang)
+                if exact_translation:
+                    if chinese_word not in terminology_dict:
+                        terminology_dict[chinese_word] = {}
+                    terminology_dict[chinese_word][target_lang] = exact_translation
+                    exact_match_count += 1
+                    logger.info(f"✓ 精确匹配: {chinese_word} -> {exact_translation} ({target_lang})")
+                    continue
+                
+                # 2. 如果精确匹配失败，使用向量相似度检索
                 similar_results = translation_mgr.get_translations_by_similarity(
                     db=db,
                     query_text=chinese_word,
@@ -79,6 +92,7 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
                         if chinese_word not in terminology_dict:
                             terminology_dict[chinese_word] = {}
                         terminology_dict[chinese_word][target_lang] = translation
+                        vector_match_count += 1
                         logger.info(f"✓ 向量匹配: {chinese_word} → {translation} (相似度: {similarity_score:.3f}, 原术语: {original_term})")
                     else:
                         logger.debug(f"  相似度过低: {chinese_word} (分数: {similarity_score:.3f})")
@@ -87,6 +101,8 @@ def query_terminology_node(state: QueryTerminologyNodeInput, config: RunnableCon
         
         # 打印汇总信息
         logger.info(f"向量检索完成，共找到 {len(terminology_dict)} 个术语的翻译")
+        logger.info(f"  - 精确匹配: {exact_match_count} 个")
+        logger.info(f"  - 向量匹配: {vector_match_count} 个")
         for word, translations in terminology_dict.items():
             logger.info(f"  {word}: {translations}")
         
