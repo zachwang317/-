@@ -180,12 +180,19 @@ class ParallelTranslateNodeInput(BaseModel):
     chinese_columns: List[str] = Field(..., description="需要翻译的中文列名列表")
     target_language: str = Field(..., description="单个目标语言")
     terminology_dict: dict = Field(default={}, description="专词字典")
+    batch_id: Optional[str] = Field(default=None, description="批次ID")
+    batch_index: Optional[int] = Field(default=0, description="批次索引")
+    total_batches: Optional[int] = Field(default=1, description="总批次数")
+    batch_data: Optional[List[dict]] = Field(default=None, description="批次数据（行数据列表）")
 
 
 class ParallelTranslateNodeOutput(BaseModel):
     """并行翻译节点输出"""
     target_language: str = Field(..., description="已翻译的目标语言")
     translated_data: dict = Field(..., description="该语言的翻译结果")
+    batch_id: Optional[str] = Field(default=None, description="批次ID")
+    batch_index: Optional[int] = Field(default=0, description="批次索引")
+    translated_batch_data: Optional[List[dict]] = Field(default=None, description="翻译后的批次数据")
 
 
 class MergeTranslationsNodeInput(BaseModel):
