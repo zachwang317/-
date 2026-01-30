@@ -1,0 +1,44 @@
+# Vercel专用依赖文件
+# 只包含前端Web应用需要的最小依赖
+
+# Web框架
+fastapi==0.121.2
+uvicorn==0.38.0
+starlette==0.49.3
+python-multipart==0.0.20
+
+# 核心依赖
+pydantic==2.12.3
+pydantic-core==2.41.4
+python-dotenv==1.2.1
+
+# HTTP客户端
+httpx==0.28.1
+httpcore==1.0.9
+requests==2.32.5
+
+# 数据处理
+pandas==2.2.2
+numpy==2.2.6
+openpyxl==3.1.5
+xlsxwriter==3.2.9
+
+# 模板引擎
+Jinja2==3.1.6
+
+# 工具库
+PyYAML==6.0.3
+tenacity==9.1.2
+
+# 语言模型相关
+langchain==1.0.3
+langchain-core==1.0.2
+langgraph==1.0.2
+tiktoken==0.12.0
+
+# 注意：以下包已移除，不适合Vercel环境
+# - opencv-python (需要系统库)
+# - PyGObject (需要GTK)
+# - dbus-python (需要D-Bus)
+# - psycopg2-binary (本地数据库，Vercel不需要)
+# - boto3 (如果不使用S3可以移除)
